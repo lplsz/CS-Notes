@@ -210,6 +210,14 @@ Layered architecture providing modularity, making it much easier to change the i
 ### Protocol Layering
 
 > Service Model: What services a layer offers to the layer above.
+>
+> 
+>
+> **Application**: How application message are encoded and decoded
+>
+> **Transport:**
+>
+> **Network:** Delivers datagram between hosts.
 
 <img src="Network.assets/image-20210920133031417.png" alt="image-20210920133031417" style="zoom:80%;" />
 
@@ -229,7 +237,7 @@ Layered architecture providing modularity, making it much easier to change the i
     * Routing protocol: Determine the routes that datagrams take between source and destinations.
         * ​	There exist many routing protocols
 
-* **Link:** The network layer routes a datagram through routers. While the link layer move packets from one node to the next node in the route. 
+* **Link:** The network layer routes a datagram through routers. While the link layer move packets from one node to the next node in the route.  怎么到下一个Link。
 
     In particular, at each node, the network layer passes the datagram down to the link layer, which delivers the datagram to the next node along the route. At this next node, the link layer passes the datagram up to the network layer.
 
@@ -468,9 +476,9 @@ Typically, the HTTP server closes a connection when it isn’t used for a certai
 
 Non-persistent: Each object need two RTTs. (One for handshake, one for receive and request)
 
-Persistent without pipelining: Each object need one RTT (No need to handshake)
+Persistent without pipelining: 2 RTT (Handshaking + Index file) + Each object need one RTT (No need to handshake)
 
-Persistent with pipelining: Multiple object need only one RTT (Requests are made back-to-back without waiting for the response)
+Persistent with pipelining: 2 RTT (Handshaking + Index file) + Multiple object need only one RTT (Requests are made back-to-back without waiting for the response)
 
 ### Cookies
 
@@ -565,15 +573,533 @@ The framing is done by the framing sub-layer of the HTTP/2 protocol.
 
 ## Email
 
+The internet mail system is consist of user agent, mail servers and Simple Mail Transfer Protocol (SMTP). 
+
+* SMTP is an application -level protocal for email.
+* SMTP use TCP to reliably transfer message to server, port 25
+
 <img src="Network.assets/image-20211002224800426.png" alt="image-20211002224800426" style="zoom:67%;" />
+
+Three phases of transfer
+
+* SMTP Application Level Handshaking (Besides TCP handshake)
+* Transfer
+* Closure
+
+**Why we need server**
+
+Instead of agent directly talks to each other, we have alway-on server so that the delivery won't be affectly when the receiver is temporarily down.
+
+### Email Format
+
+* Header: From, to, Subject
+* Body: 7-bits ASCII only. Multimedia data need to be encoded and then decoded.
+
+### Access Protocols
+
+<img src="Network.assets/image-20211003114321036.png" alt="image-20211003114321036" style="zoom:80%;" />
+
+1. Alice use SMTP or HTTP to push
+2. Bob use HTTP (Web-based interface) or IMAP (Client application) to pull as SMTP is a push protocol instead of a pull one
 
 ## DNS
 
+> Domain name system (DNS) maps readable variable length **hostname** into fixed-length, easy processed **IP Address**.
+>
+> **Protocol Layer**: Application-layer protocol
+>
+> **Transport Layer**: UDP, port 53
+
+### Services Provided
+
+* Host aliasing: A canonical host can have multiple more mnemonic alias hostnames.
+* Mail server aliasing: The domain of a email address is usually not the canonical hostname. So DNS need to retrieve the actual hostname.
+* Load distribution: The DNS answer qeury with multiple IP addresses in rotation to distribute the load.
+
+### Working Process
+
+#### Goal
+
+* No naming conflicts (uniqueness) 
+* Scalable: many mappings + frequent updates
+* Distributed, autonomous administration: 
+    * Ability to update my own (domains’) names
+    * Don’t have to track everybody’s updates
+* Highly available
+* Lookups should be fast
+
+#### Centralize DNS Server
+
+> Does not satisfy: Scalable, distributed administration, highly available, fast lookup
+
+* **A single point of failure**. If the DNS server crashes, so does the entire Internet!
+* **Traffic volume**. A single DNS server would have to handle all DNS queries (for all the HTTP requests and e-mail messages generated from hundreds of millions of hosts).
+* **Maintenance**. The single DNS server would have to keep records for all Internet hosts. Not only would this centralized database be huge, but it would have to be updated frequently to account for every new host.
+* **Distant centralized database.** A single DNS server cannot be “close to” all the querying clients. If we put the single DNS server in New York City, then all queries from Australia must travel to the other side of the globe, perhaps over slow and congested links. This can lead to significant delays.
+
+#### Distributed, Hierachical Database
+
+> Resolve all issues with centralized DNS Server
+
+<img src="Network.assets/image-20211003120528254.png" alt="image-20211003120528254" style="zoom:80%;" />
+
+**Hierarchy**
+
+* Root DNS Server: Provide IP address of the TLD servers. 13 different root servers, duplicate to 1000 roots instances.
+* Top-level domain (TLD) DNS server: Provided the IP address of teh authoritative DNS servers
+* Authoritative DNS servers: Organisations that holds the mappings of their own service.
+    * e.g. edu provide IP to berkeley, while berkely maintain its own hostname like EECS.
+
+There is another type of DNS server that does not strictly belong to the hierarchy. Local DNS servers acts as a proxy, forwarding the query into the DNS server hierarchy.
+
+<img src="Network.assets/image-20211003121613172.png" alt="image-20211003121613172" style="zoom:80%;" />
+
+DNS queries can be either recursive queries or iterative queries:
+
+* The query sent from cse.nyu.edu to dns.nyu.edu is a recursive query, since the query asks dns.nyu.edu to obtain the mapping on its behalf. **Recursive query replies with the desire IP address.**
+* The subsequent three queries are iterative since all of the replies are directly returned to dns.nyu.edu. **Iterated query replies with server to contact.**
+
+In theory, any DNS query can be iterative or recursive.
+
+**Caching**
+
+We can cache the mappings to affect unnecessary traffics. In fact, because of caching, root servers are bypassed for all but a very small fraction of DNS queries.
+
+### Record and Messages
+
+#### Records
+
+> The DNS servers store resource records (RRs). RRs provide mappings. Each DNS reply **message** carries one or more resource **records**.
+
+A resource record is a four-tuple that contains the following fields:
+
+(Name, Value, Type, TTL)
+
+**TTL**: Time to live. Determines when the resource should be removed from the cache. So that update of DNS records can be reflected eventually.
+
+| Type  | Name                                           | Value                                                      |
+| ----- | ---------------------------------------------- | ---------------------------------------------------------- |
+| A     | Hostname (eecs.berkeley.edu)                   | IP                                                         |
+| NS    | Domain (berkeley.edu)                          | Hostname of an authoritative DNS server (dns.berkeley.edu) |
+| CNAME | Hostname (berkeley.edu)                        | Canonical hostname (CSNO1.berkeley.com)                    |
+| MX    | Alias hostname of a mail server (berkeley.edu) | Canonical name of a mail server (mail.berkeley.edu)        |
+
+* If a DNS server is authoritative for a particular hostname, then the DNS server will contain a Type A record for the hostname. (Even if the DNS server is not authoritative, it may contain a Type A record in its cache.)
+* If a server is not authoritative for a hostname, then the server will contain a Type NS record for the domain that includes the hostname; it will also contain a Type A record that provides the IP address of the DNS server in the Value field of the NS record.
+
+#### Message
+
+> Both DNS query and reply messages have the same format.
+
+<img src="Network.assets/image-20211003123750798.png" alt="image-20211003123750798" style="zoom:80%;" />
+
+* Answer section: IP address mapping
+* Authority section: Authoriative DNS servers
+* Additional sectiosn
+    * Answer to a MX query can contains the canonical hostname of a mail server
+    * Answer to a A record can provide the IP address and the canoncial hostname of the mail server
+
+![image-20211003124106782](Network.assets/image-20211003124106782.png)
+
+##### Flag
+
+AA = Authoritative Answer
+
+TC = Truncation
+
+RD = Recursion Desired (set in a query and copied into the response if recursion is supported)
+
+RA = Recursion Available (If set, denotes recursive query support is available)
+
+
+
+AD = Authenticated Data (for DNSSEC only; indicates that the data was authenticated)
+
+CD = Checking Disabled (DNSSEC only; disables checking at the receiving server)
+
+#### Update DNS Servers
+
+>  Remember that old records may be cached in other DNS servers (for up to TTL) 
+
+General guidelines
+
+* Record the current TTL value of the record
+* Lower the TTL of the record to a low value (e.g., 30 seconds)
+* Wait the length of the previous TTL
+* Update the record
+* Wait for some time (e.g., 1 hour)
+* Change the TTL back to your previous time
+
+#### WWW vs Non-WWW
+
+> Non-WWW is usually referred to as apex or naked domains.
+
+There are 2 main advantages of using www
+
+* DNS requires apex domains to always point to type A record. CNAME record cannot coexist with other RR types (Non-www 只能直接指向IP，不能有CNAME Record，所以就没有办法使用不同IP)
+    * With www domains, offloading to a CDN is easy:
+        *  www.metalhead.com CNAME somecdn.com
+        *  metalhead.com A 156.23.34.252
+    * Note: Some CDN providers have workarounds for the above 
+* Cookies of the non-WWW domain are automatically passed down to sub-domains (metalhead.com to static.metalhead.com and mail.metalhead.com) 一个网站的Cookies会自动Pass到其他Sub-domains
+    * Unnecessary cookies hurt performance
+    * Security issue
+
+## P2P
+
+> The applications described in this chapter thus far—including the Web, e-mail, and DNS—all employ client-server architectures with significant reliance on always-on infrastructure servers.
+>
+> With P2P architecture, there is minimal (or no) reliance on always-on infrastructure servers.
+
+### Scalability
+
+**Client-server**
+
+The server send a copy of the file to each and every one of the peers. The total distribution time taken increase linearly with the number of peers.
+
+**P2P Architecture**
+
+In P2P file distribution, each peer can redistribute any portion of the file it has received to any other peers, thereby assisting the server in the distribution process. In particular, when a peer receives some file data, it can use its own upload capacity to redistribute the data to other peers.
+
+In another word, the total upload rate is the sum of the server and all the peers instead of only the server in the client-server model. This substantially speed up the distribution process.
+
+<img src="Network.assets/image-20211005154128568.png" alt="image-20211005154128568" style="zoom:80%;" />
+
+Thus, applications with the P2P architecture can be self-scaling. This scalability is a direct consequence of peers being redistributors as well as consumers of bits.
+
+### Bit Torrent
+
+> BitTorrent is a popular P2P protocol for file distribution.
+
+**Overview**
+
+In BitTorrent lingo, the collection of all peers participating in the distribution of a particular file is called a torrent. Peers in a torrent download equal-size chunks of the file from one another, with a typical chunk size of 256 KBytes. 
+
+When a peer first joins a torrent, it has no chunks. Over time it accumulates more and more chunks. While it downloads chunks it also uploads chunks to other peers. 
+
+ Once a peer has acquired the entire file, it may (selfishly) leave the torrent, or (altruistically 无私心) remain in the torrent and continue to upload chunks to other peers. Also, any peer may leave the torrent at any time with only a subset of chunks, and later rejoin the torrent.
+
+#### Operations
+
+**DHT (Distributed Hash Table)**
+
+> Map each peer's key to an integer. A peer queries DHT with key, or insert pairs.
+
+**Tracker**
+
+Each torrent has an infrastructure node called a tracker. It keeps track of the peers that in the torrent. 
+
+* When a peer joins a torrent, it registers itself with the tracker and periodically informs the tracker that it is still in the torrent.
+* When a peer joins, the tracker randomly selects some peers and sends the IP addresses of them for Alice to establish TCP connections with them.
+
+**Get chucks**
+
+Periodically, Alice will ask each of her neighboring peers (over the TCP connections) for the list of the chunks they have and make two decision:
+
+1. Which chuck should be requested first?
+    * Rarest first. Aim to equalise the distribution between rare and common chucks.
+2. Which neighbour she should respond to?
+    * Clever trading algorithm (tit-for-tat): Respond (Send chuck) on the four neighbour that feed she data at the highest rate.
+    * Every 10 seconds, she recalculate the rate and modify the set of four peers (**unchoked peers**).
+    * Every 30 seconds, she picks an random additional neighbour Bob and sends he her chuck.  (**optimistically unchoked**)
+        * A new partner is chosen and if both peers are satisfied with the trading, they will put each other in their top four list and continue trading, until one finds a better partner.
+        * The random neighbor selection also allows new peers to get chunks, so that they can have something to trade.
+        * All other neighbouring peers beside the five (Top four + one probing peer) are **choked**. That is they never recieve any chuck from Alice.
+
+The tit-for-tat incentive mechanism makes the ecosystem wildly successful.
+
+## Video & CDN
+
+> Video Streaming = Encoding + DASH + Buffering
+
+### Video Encoding
+
+A video is a sequence of images, typically being displayed at a constant rate, for example, at 24 or 30 images per second. An uncompressed, digitally encoded image consists of an array of pixels, with each pixel encoded into a number of bits to represent luminance and color. 
+
+**Compress**
+
+An important characteristic of video is that it can be compressed, thereby trading off video quality with bit rate. Today’s compression algorithms can compress a video to essentially any bit rate desired. The higher the bit rate, the better the image quality and the better the overall user viewing experience.
+
+* Spatial coding: Instead of sending N values of the same colour, send one and specifies the number of times to repeat
+
+* Temporal coding: Instead of sending two distinct frames, only send the difference.
+
+**CBR (Constant bit rate)** vs **VBR (Variable bit rate)**
+
+### HTTP & DASH
+
+**Challenge: Heterogenious Network Bandwidth**
+
+In Dynamic Adaptive Streaming over HTTP (DASH), the video is encoded into several different versions, with each version having a different bit rate.
+
+ The client dynamicly request chunks of video segments of a few seconds in length depending on the available bandwidth.
+
+**Operation**
+
+The HTTP server has a **manifest file** that mappings video version of different bit rate to their respective URL. The client first requests the manifest file and learns about the various versions. The client then selects one chunk at a time by specifying a URL and a byte range (Request only a portion of a file) in an HTTP GET request message for each chunk.
+
+### CDN
+
+#### Central Center
+
+Problem with single massive data center
+
+* Single point of failure
+* Throughput limited by links on the route, likely to happen for a long route
+* Multiple copy of the same video get sends around, waste money on ISP.
+
+#### Distributed CDN
+
+A CDN (Content Distribution Networks) manages servers in multiple geographically distributed locations, stores copies of the contents in its servers, and attempts to direct each user request to a CDN location that will provide the best user experience.
+
+**Category**
+
+The CDN may be a private CDN, that is, owned by the content provider itself; for example, Google’s CDN distributes YouTube videos and other types of content.
+
+The CDN may alternatively be a third-party CDN that distributes content on behalf of multiple content providers
+
+**Server placement philosophies**
+
+* Enter Deep: Deploy large number of small server in access ISPs. Goal is to decrease the numerb of links to the end user. Maintaining and managing is challenging due to the highly distributed design.
+* Bring Home: Deploy small number of large clusters in IXP. Lower maintenance and managment overhead. 
+
+#### CDN Operation
+
+CDN needs to perform two operations
+
+* Determine a suitable cluster for the client
+* Redirect request to a server in that cluster
+
+Most CDNs take advantage of DNS to intercept and redirect requests.
+
+<img src="Network.assets/image-20211005183754566.png" alt="image-20211005183754566" style="zoom:80%;" />
+
+The content provider itself respond to the request and direct the query to the appropriate DNS server.
+
+#### Cluster Selection
+
+> CDN learns the IP address of the client’s LDNS server via the client’s DNS lookup. After learning this IP address, the CDN needs to select an appropriate cluster based on this IP address.
+
+**Geographically closest**
+
+* The closest doesn't mean  the closest interns of length or number of hops of the network path
+* Does not work for users that are configured to use remotely located LDNSs.
+
+**Real-time Measurements**
+
+CDN can perform periodic real-time measurement of delay and loss between it and all LDNSs around the world. Drawback is that many LDNSs are configured to not respond to such probes.
+
 ## Socket Programming
+
+### TCP
+
+1. Handshake
+2. Create a unique four-tuple connection
+3. Send data through the socket.
+
+<img src="Network.assets/image-20211008120129947.png" alt="image-20211008120129947" style="zoom: 67%;" />
+
+serverSocket: The welcome port.
+
+connectionSocket: Newly created socket dedicated to the particular client.
+
+
 
 
 
 # Transport Layer
+
+## Overview
+
+> A transport-layer protocol provides for logical communication **between application** processes running on different hosts, while a network-layer protocol provides logicalcommunication **between hosts**.
+>
+> Analogy:
+>
+> * Network layer is the postal server that delivers from house to house.
+> * Transport layer take those received segments and distribute them to the destination applications within the house.
+
+**Network Layer**
+
+* IP provides logical communication between hosts. Find paths through the network.
+
+    
+
+* Does not guarantee segment delivery
+
+* Does not guarantee orderly delivery of segment
+
+* Does not guarantee the integrity of the data in the segments.
+
+**Transport Layer**
+
+The job of UDP and TCP is to extend IP’s **host-to-host delivery** to **process-to-process delivery**. This is called transport-layer multiplexing and demultiplexing.
+
+| UDP: Connectionless         | TCP: Connection-Oriented |
+| --------------------------- | ------------------------ |
+| Process-to-process delivery | Reliable delivery        |
+| Error checking              | In order delivery        |
+|                             | Flow control             |
+|                             | Congestion control       |
+
+Not provided by both:
+
+* Delay gurantee
+* Bandwidth gurantee
+
+## Multiplexing & Demultiplexing
+
+> Demultiplexing is the job of delivering the data in a transport-layer segment to the correct socket.
+>
+> Multiplexing is the job of gathering data chunks at the source host from different sockets, encapsulating each data chunk with header information (used in demultiplexing) to create segments, and passing the segments to the network layer.
+
+### Multiplexing
+
+A UDP socket is uniquely identified by a two-tuple of the dest IP address and dest port number.
+
+TCP socket is identified by a four-tuple: (source IP address, source port number, destination IP address, destination port number).
+
+This decide how many value is required to direct the message to the socket.
+
+With UDP, the server can have only one socket to respond to all clients, but with TCP, the server need to have a socket for each client.  As each TCP socket is also identified by the source IP and port,.
+
+### Demultiplexing
+
+Multiplexing happen at all layer
+
+
+
+In UDP, the server can have only one socket to respond 
+
+
+
+Demultiplexing using 4-tuple
+
+TCP: Uniquely identify by four value. Just using dest port is not enough
+
+### Socket and Port
+
+> A TCP connection is uniquely identified by four-tuple. Only knowing the destination IP and port is not enough to pass the message to the correct process.
+>
+> Two different socket on the same server can share the same port. They differs by the source IP and port.
+
+**A TCP socket is an endpoint instance** defined by an IP address and a port in the context of either a particular TCP connection or the listening state.
+
+**A port is a virtualisation identifier** defining a service endpoint (as distinct from a service *instance* endpoint (session identifier).
+
+**A TCP socket is not a connection**, it is the endpoint of a specific connection.
+
+**There can be concurrent connections to a service endpoint**, because a connection is identified by *both its local and remote* endpoints, allowing traffic to be routed to a specific service instance.
+
+
+
+A port is a virtualised endpoint. This virtualisation makes multiple concurrent connections on a single network interface possible.
+
+## UDP
+
+**Applcation that use UDP**: DNS, Internet telephone, HTTP3
+
+**Advantage of UDP**
+
+* No connection establishment, one less RTT
+
+* No connection state to maintain, e.g. state variable, receive/send buffer, less overhead
+
+* Smaller header size
+* No congestion control: Send instantly, no need to wait for ACK
+
+**Usage**
+
+* Real time application
+* Game
+
+### Structure
+
+<img src="Network.assets/image-20211006143838651.png" alt="image-20211006143838651" style="zoom:80%;" />
+
+#### Checksum
+
+Sum of all 16 bits number in the segment  == 0.
+
+This is achieve by letting the Checksum be the 1's complement of the sum of all the field excluding the Checksum field.
+
+1 bit error can be detected but not 2 bit error
+
+## Reliable Data Transfer
+
+#### rdt1.0
+
+Assuming that the underlying Network layer is reliable, all the transport layer have to do is as follows.
+
+<img src="Network.assets/image-20211006175140166.png" alt="image-20211006175140166" style="zoom:80%;" />
+
+### Deal with Corruption
+
+#### rdt2.0: ACK & NAK
+
+> **Error Detection**:  Checksum
+>
+> **Deal with Corruption**: If ACK, send next packet. If NAK, retransmit.
+>
+> **Problem:** If ACK/ NAK is corrupted, the sender doesn't know what happened at receiver. Retransmit may cause duplicate.
+
+#### rdt2.1: ACK & NAK + #Sequence
+
+Add a sequence number in the sent packet to avoid duplicate. Receiver can use sequence number to distinguish duplicate. The sequence number only need to be 1 bit, as it suffice to know whether the two neighbouring packet are the same.
+
+#### rdt2.2: ACK(#Squence)
+
+Remove NAK by adding the sequence number in the ACK.
+
+### Deal with Loss
+
+#### rdt3.0: Timer
+
+The sender set a timer aftering sending a packet. If no ACK is received after the timer, it will retransmit the packet. With the aid of #sequence, duplicate is not an issue.
+
+### Pipelined RDT
+
+Although rdt3.0 does work, it spends too much time on stop-and-wait. 
+
+This can be solved by pipelining: Send multiple packets without waiting for ACK. This lead to the following consequences
+
+* **Sequence Number**: It need to be increasing and unique.
+* **Buffer**: The sender and receiver need to buffer more than one packets. 
+
+Two basic approaches toward pipelined error recovery can be identified: Go-Back-N and selective repeat.
+
+#### GBN
+
+#### Selective Repeat
+
+##### Receiver
+
+**Package in the Window**: Selective ACK
+
+**Package outside Window**: ACK this package
+
+##### Sender
+
+**Timeout**: Retransmit
+
+**ACK**: Mark off, potentially move the window
+
+## TCP
+
+**Applcation that use TCP**: SMTP, Telnet, SSH, FTP, DASH
+
+### Connection Management
+
+<img src="Network.assets/image-20211025073940494.png" alt="image-20211025073940494" style="zoom: 50%;" />
+
+
+
+![image-20211025085059995](Network.assets/image-20211025085059995.png)
+
+## Cogestion Control
+
+
+
+
 
 # Network Layer
 
@@ -597,4 +1123,15 @@ traceroute host
 # Connect from one host to another. Log onto another machine
 telnet host [port]
 ```
+
+
+
+
+
+```shell
+dig @[DNS-sever-address] [hostname/IP to lookup] [Query type]
+dig -x [hostname/IP to lookup]		# Do inverse query, IP => Hostname
+```
+
+
 
